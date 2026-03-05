@@ -1,0 +1,191 @@
+# Kombucha Batch Tracker — Design Document
+
+## Overview
+
+A minimal iOS app for tracking homemade kombucha batches through their fermentation phases. Users create batches, run fermentation timers with push-notification reminders, attach notes and photos, and review completed batches. The interface should follow a clean, MUI-inspired aesthetic — simple, functional, warm but not cluttered.
+
+Local storage only (no accounts, no cloud sync).
+
+---
+
+## Data Model
+
+Each **Batch** contains the following attributes:
+
+- **id**: unique identifier
+- **name**: user-defined string (e.g. "Spring Earl Grey")
+- **tags**: array of tag strings (see Tags section below)
+- **status**: `in_progress` | `completed`
+- **star_rating**: nullable integer 1–5, set when batch is marked complete
+- **created_at**: timestamp
+
+### Timeline Entries
+
+A batch has a unified **timeline** — a chronological feed of three entry types:
+
+1. **Note Entry**: `{ type: "note", content: string, date: timestamp }`
+2. **Photo Entry**: `{ type: "photo", image_data: image, date: timestamp }`
+3. **Timer Log Entry**: `{ type: "timer_log", phase_name: string, duration_days: integer, started_at: timestamp, ended_at: timestamp | null }`
+
+All timeline entries are displayed in a single chronological feed within the batch detail view. Notes and photos are editable (content and date can be changed after creation). Timer log entries have an editable `phase_name` field (defaults to "Phase I", "Phase II", etc.).
+
+### Photos
+
+- Max **15 photos** per batch.
+- Users can capture from camera or pick from photo library.
+- Photos are displayed as **square thumbnails** (normalized aspect ratio) in the timeline view. No image size reduction — just visual cropping to square for display.
+
+---
+
+## Tags System
+
+Tags replace a fixed "tea type" field. They provide flexible categorization for each batch.
+
+### Default Tags (always available)
+Black Tea, Green Tea, Oolong Tea, White Tea, Herbal Tea, Honey, Sugar, Cane Sugar, Fruit
+
+### Custom Tags
+- Users can create new tags when creating or editing a batch.
+- Custom tags persist as long as they are used by at least one batch (in-progress or completed).
+- When a custom tag is no longer associated with any batch, it is permanently removed from the available tag list.
+
+### Tag UI
+When creating or editing a batch, the user sees available tags as tappable chips. A text field with an "Add" button allows creating new tags. Selected tags are visually highlighted.
+
+---
+
+## Screens & Navigation
+
+The app has two main tabs/panes:
+
+### Tab 1: Active Batches (Main Landing Page)
+
+- Displays a list of all `in_progress` batches as **preview cards**.
+- Each card shows:
+  - Batch name
+  - Tags (as small chips/pills)
+  - Fermentation progress as text: **"Day 8 of 14"** format
+  - A small visual indicator of active fermentation
+- A prominent **"+ New Batch"** button at the top or as a floating action button.
+- Tapping a card navigates to the **Batch Detail View**.
+- If there are no active batches, show an empty state with a friendly prompt to start a new batch.
+
+### Tab 2: Completed Batches
+
+- Simple list of completed batches, showing:
+  - Batch name
+  - Star rating (if set)
+  - Completion date
+  - Tags
+- Users can tap into a completed batch to view its full detail (including timeline).
+- Users can **rename** or **delete** completed batches from this view.
+- Users can still **edit metadata, add/edit notes, and add photos** to completed batches — completing a batch just removes it from the main landing page.
+- No sorting or filtering required — just a straightforward list.
+
+---
+
+## Batch Creation Flow
+
+Tapping "+ New Batch" opens a creation form:
+
+1. **Name** — text input (required)
+2. **Tags** — tag selector with defaults + ability to create new tags
+3. **Notes** — free-form text field (optional, creates the first timeline note entry)
+
+On submission:
+- A timer is automatically started with a default duration of **14 days (2 weeks)** for Phase I.
+- The user can adjust this duration before confirming if they want a different length.
+- The batch appears on the Active Batches landing page.
+- A "Phase I" timer log entry is created on the timeline.
+
+---
+
+## Batch Detail View
+
+### Top Section
+- **Batch name** (editable)
+- **Circular progress bar** showing fermentation progress (e.g. a ring that fills as days elapse)
+- Time remaining displayed as days/hours within or below the circle
+- **Tags** displayed as chips below the name (tappable to edit)
+
+### Timeline Section (below top section)
+A scrollable, chronological **log/feed** showing all timeline entries intermixed:
+
+- **Timer log entries**: styled distinctly (e.g. with an icon), showing phase name, duration, start date. Phase name is editable (defaults: "Phase I", "Phase II", "Phase III"...).
+- **Note entries**: show content and date. Tappable to edit content or date.
+- **Photo entries**: show square thumbnail and date. Tappable to view full image or edit date.
+
+An **"Add Note"** and **"Add Photo"** action should be easily accessible (e.g. buttons pinned at the bottom of the screen or a floating "+" menu).
+
+---
+
+## Timer Behavior
+
+### Starting
+- When a batch is created, the timer starts immediately with the default 14-day duration.
+- A timer log entry ("Phase I — 14 days") is added to the timeline.
+
+### While Running
+- The main landing page card shows "Day X of Y" text.
+- The batch detail view shows a circular progress ring filling over time.
+- Timer tracks elapsed days passively (does not need to run as a literal countdown — it calculates progress from `started_at` and `duration_days`).
+
+### When Timer Completes
+- A **push notification** is sent: e.g. *"Your [Batch Name] is ready! Tap to add more time or complete."*
+- When the user opens the batch, they see two options:
+  1. **Add More Time** — prompts for duration (default: **7 days / 1 week**). Creates a new timer log entry ("Phase II — 7 days"). The user can adjust the duration. The progress circle resets for the new phase.
+  2. **Complete Batch** — prompts for an optional **star rating** (1–5 stars), then moves the batch to the Completed tab.
+
+### Timer Log
+- Each phase is recorded as a timer log entry on the timeline.
+- Phase names default to "Phase I", "Phase II", "Phase III", etc., but users can rename them (e.g. "Second Ferment with Ginger").
+
+---
+
+## Notifications
+
+- **Single push notification** when a fermentation timer reaches its end.
+- No intermediate or halfway reminders.
+- Notification taps should deep-link to the relevant batch detail view.
+
+---
+
+## Visual Design Guidelines
+
+- **Style**: Clean, minimal, MUI (Material UI) inspired. Flat surfaces, subtle shadows, clear typography hierarchy.
+- **Colors**: Neutral base (white/light gray backgrounds), with a warm earthy accent color (muted amber, terracotta, or sage green — something that feels natural/organic without being heavy).
+- **Typography**: Sans-serif, clear hierarchy. Batch names in medium-weight, metadata in lighter weight.
+- **Progress circle**: Thin-stroke circular ring, accent-colored fill, clean and simple.
+- **Tags**: Small rounded pill/chip components in a muted color.
+- **Timeline entries**: Card-style items in the feed with subtle left-border color coding by type (e.g. green for timer events, neutral for notes, blue for photos).
+- **Empty states**: Friendly, encouraging micro-copy (e.g. "No batches yet — start your first brew!").
+- **Overall feel**: Like a personal journal/utility — warm but not busy. Prioritize readability and ease of use for a non-technical user.
+
+---
+
+## Technical Notes for Replit
+
+- **Platform**: iOS app (React Native or Swift — builder's choice based on what Replit supports best).
+- **Storage**: Local on-device storage only (AsyncStorage, SQLite, or equivalent). No backend, no user accounts.
+- **Notifications**: Use local push notifications (no server needed). Schedule notification for timer end date when a phase begins. Cancel/reschedule when the user modifies the timer.
+- **Photos**: Access device camera and photo library. Store images locally. Display as square-cropped thumbnails in timeline; full-size on tap.
+- **State management**: Simple — the data set is small (likely dozens of batches at most).
+
+---
+
+## Summary of User Flows
+
+### Happy Path: Full Batch Lifecycle
+1. User opens app → sees Active Batches (empty state if first time)
+2. Taps "+ New Batch"
+3. Enters name: "Spring Jasmine"
+4. Selects tags: Green Tea, Honey
+5. Adds note: "Using 1 cup honey, 8 bags jasmine green tea"
+6. Confirms → 14-day timer starts → batch card appears on landing page
+7. Over the next 2 weeks, user occasionally adds notes/photos from the batch detail view
+8. Day 14 → push notification arrives
+9. User taps notification → sees "Add More Time" or "Complete"
+10. Chooses "Add More Time" → enters 5 days → "Phase II" begins
+11. Day 19 → another notification
+12. User taps "Complete" → gives 4 stars → batch moves to Completed tab
+13. Later, user browses Completed tab, taps into the batch, sees full timeline of notes, photos, and phase history

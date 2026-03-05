@@ -14,6 +14,9 @@ import { CircularProgress } from '@/components/CircularProgress';
 import { TagChip } from '@/components/TagChip';
 import { StarRating } from '@/components/StarRating';
 import { TimelineEntryCard } from '@/components/TimelineEntryCard';
+import { DEBUG_MODE } from '@/constants/debug';
+
+const STEP = DEBUG_MODE ? 0.1 : 1;
 
 function isPhaseTimedOut(phase: TimerLogEntry): boolean {
   if (phase.ended_at !== null) return false;
@@ -24,11 +27,61 @@ function isPhaseTimedOut(phase: TimerLogEntry): boolean {
 function formatTimeRemaining(phase: TimerLogEntry): string {
   const endMs = phase.started_at + phase.duration_days * 24 * 60 * 60 * 1000;
   const remaining = Math.max(0, endMs - Date.now());
+  if (remaining === 0) return 'Complete';
   const days = Math.floor(remaining / (24 * 3600 * 1000));
   const hours = Math.floor((remaining % (24 * 3600 * 1000)) / 3600000);
+  const minutes = Math.floor((remaining % 3600000) / 60000);
   if (days > 0) return `${days}d ${hours}h remaining`;
-  if (hours > 0) return `${hours}h remaining`;
-  return 'Less than 1h remaining';
+  if (hours > 0) return `${hours}h ${minutes}m remaining`;
+  return `${minutes}m remaining`;
+}
+
+function DurationPicker({
+  value,
+  inputValue,
+  onValueChange,
+  onInputChange,
+}: {
+  value: number;
+  inputValue: string;
+  onValueChange: (v: number) => void;
+  onInputChange: (s: string) => void;
+}) {
+  const step = (dir: 1 | -1) => {
+    const newVal = Math.max(STEP, parseFloat((value + dir * STEP).toFixed(2)));
+    onValueChange(newVal);
+    onInputChange(DEBUG_MODE ? String(newVal) : String(Math.round(newVal)));
+  };
+
+  return (
+    <View>
+      <View style={styles.durationRow}>
+        <Pressable onPress={() => step(-1)} style={styles.durationBtn}>
+          <Ionicons name="remove" size={22} color={Colors.accent} />
+        </Pressable>
+        <TextInput
+          style={styles.durationInput}
+          value={inputValue}
+          onChangeText={s => {
+            onInputChange(s);
+            const n = parseFloat(s);
+            if (!isNaN(n) && n > 0) onValueChange(n);
+          }}
+          keyboardType={DEBUG_MODE ? 'decimal-pad' : 'number-pad'}
+          textAlign="center"
+        />
+        <Text style={styles.durationUnit}>days</Text>
+        <Pressable onPress={() => step(1)} style={styles.durationBtn}>
+          <Ionicons name="add" size={22} color={Colors.accent} />
+        </Pressable>
+      </View>
+      {DEBUG_MODE && (
+        <Text style={styles.debugHint}>
+          {(value * 24).toFixed(2)}h · {(value * 24 * 60).toFixed(0)}min
+        </Text>
+      )}
+    </View>
+  );
 }
 
 interface AddMoreTimeModalProps {
@@ -39,17 +92,20 @@ interface AddMoreTimeModalProps {
 
 function AddMoreTimeModal({ visible, batchId, onClose }: AddMoreTimeModalProps) {
   const { addPhase } = useBatches();
-  const [days, setDays] = useState(7);
-  const [daysInput, setDaysInput] = useState('7');
+  const defaultDays = DEBUG_MODE ? 0.1 : 7;
+  const [days, setDays] = useState(defaultDays);
+  const [daysInput, setDaysInput] = useState(String(defaultDays));
   const [submitting, setSubmitting] = useState(false);
 
   const handleAdd = async () => {
-    const d = parseInt(daysInput, 10);
-    if (isNaN(d) || d < 1) return;
+    const d = parseFloat(daysInput);
+    if (isNaN(d) || d <= 0) return;
     setSubmitting(true);
     if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await addPhase(batchId, d);
     setSubmitting(false);
+    setDays(defaultDays);
+    setDaysInput(String(defaultDays));
     onClose();
   };
 
@@ -59,34 +115,95 @@ function AddMoreTimeModal({ visible, batchId, onClose }: AddMoreTimeModalProps) 
         <Pressable style={styles.modalBox} onPress={e => e.stopPropagation()}>
           <Text style={styles.modalTitle}>Add More Time</Text>
           <Text style={styles.modalDesc}>Extend fermentation with a new phase.</Text>
-          <View style={styles.durationRow}>
-            <Pressable
-              onPress={() => { const d = Math.max(1, days - 1); setDays(d); setDaysInput(String(d)); }}
-              style={styles.durationBtn}
-            >
-              <Ionicons name="remove" size={22} color={Colors.accent} />
-            </Pressable>
-            <TextInput
-              style={styles.durationInput}
-              value={daysInput}
-              onChangeText={v => { setDaysInput(v); const n = parseInt(v, 10); if (!isNaN(n) && n > 0) setDays(n); }}
-              keyboardType="number-pad"
-              textAlign="center"
-            />
-            <Text style={styles.durationUnit}>days</Text>
-            <Pressable
-              onPress={() => { const d = days + 1; setDays(d); setDaysInput(String(d)); }}
-              style={styles.durationBtn}
-            >
-              <Ionicons name="add" size={22} color={Colors.accent} />
-            </Pressable>
-          </View>
+          <DurationPicker
+            value={days}
+            inputValue={daysInput}
+            onValueChange={setDays}
+            onInputChange={setDaysInput}
+          />
           <View style={styles.modalActions}>
             <Pressable onPress={onClose} style={styles.modalCancelBtn}>
               <Text style={styles.modalCancelText}>Cancel</Text>
             </Pressable>
             <Pressable onPress={handleAdd} disabled={submitting} style={styles.modalConfirmBtn}>
               <Text style={styles.modalConfirmText}>Start Phase</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+interface EditTimerModalProps {
+  visible: boolean;
+  batchId: string;
+  activePhase: TimerLogEntry;
+  onClose: () => void;
+}
+
+function EditTimerModal({ visible, batchId, activePhase, onClose }: EditTimerModalProps) {
+  const { updatePhaseTimer } = useBatches();
+  const [days, setDays] = useState(activePhase.duration_days);
+  const [daysInput, setDaysInput] = useState(String(activePhase.duration_days));
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setDays(activePhase.duration_days);
+      setDaysInput(String(activePhase.duration_days));
+    }
+  }, [visible, activePhase.duration_days]);
+
+  const handleSave = async () => {
+    const d = parseFloat(daysInput);
+    if (isNaN(d) || d <= 0) return;
+    setSubmitting(true);
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await updatePhaseTimer(batchId, activePhase.id, d);
+    setSubmitting(false);
+    onClose();
+  };
+
+  const elapsedDays = (Date.now() - activePhase.started_at) / (24 * 60 * 60 * 1000);
+  const minDays = parseFloat(Math.max(STEP, elapsedDays + STEP).toFixed(2));
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <Pressable style={styles.modalBox} onPress={e => e.stopPropagation()}>
+          <View style={styles.modalTitleRow}>
+            <Text style={styles.modalTitle}>Edit Timer</Text>
+            {DEBUG_MODE && (
+              <View style={styles.debugBadge}>
+                <Text style={styles.debugBadgeText}>DEBUG</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.modalDesc}>
+            Change the total duration of {activePhase.phase_name}.
+            {'\n'}
+            <Text style={styles.modalDescMuted}>
+              Started {new Date(activePhase.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.
+              {' '}Must be longer than elapsed time.
+            </Text>
+          </Text>
+          <DurationPicker
+            value={days}
+            inputValue={daysInput}
+            onValueChange={v => setDays(Math.max(minDays, v))}
+            onInputChange={s => {
+              setDaysInput(s);
+              const n = parseFloat(s);
+              if (!isNaN(n) && n > 0) setDays(Math.max(minDays, n));
+            }}
+          />
+          <View style={styles.modalActions}>
+            <Pressable onPress={onClose} style={styles.modalCancelBtn}>
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable onPress={handleSave} disabled={submitting} style={styles.modalConfirmBtn}>
+              <Text style={styles.modalConfirmText}>Save</Text>
             </Pressable>
           </View>
         </Pressable>
@@ -278,6 +395,7 @@ export default function BatchDetailScreen() {
   const [showComplete, setShowComplete] = useState(false);
   const [showEditTags, setShowEditTags] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
+  const [showEditTimer, setShowEditTimer] = useState(false);
 
   useEffect(() => {
     if (batch) setNameInput(batch.name);
@@ -370,13 +488,19 @@ export default function BatchDetailScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </Pressable>
-        {isCompleted && (
-          <View style={styles.completedBadge}>
-            <Ionicons name="checkmark-circle" size={14} color={Colors.sage} />
-            <Text style={styles.completedBadgeText}>Completed</Text>
-          </View>
-        )}
-        <View style={{ width: 24 }} />
+        <View style={styles.headerRight}>
+          {DEBUG_MODE && (
+            <View style={styles.debugBadge}>
+              <Text style={styles.debugBadgeText}>DEBUG</Text>
+            </View>
+          )}
+          {isCompleted && (
+            <View style={styles.completedBadge}>
+              <Ionicons name="checkmark-circle" size={14} color={Colors.sage} />
+              <Text style={styles.completedBadgeText}>Completed</Text>
+            </View>
+          )}
+        </View>
       </View>
 
       <ScrollView
@@ -437,6 +561,15 @@ export default function BatchDetailScreen() {
                 isComplete={timedOut}
               />
               <Text style={styles.phaseName}>{activePhase.phase_name}</Text>
+              {!isCompleted && (
+                <Pressable
+                  onPress={() => setShowEditTimer(true)}
+                  style={styles.editTimerBtn}
+                >
+                  <Ionicons name="timer-outline" size={14} color={Colors.accent} />
+                  <Text style={styles.editTimerBtnText}>Edit Timer</Text>
+                </Pressable>
+              )}
             </>
           ) : isCompleted ? (
             <CircularProgress
@@ -548,6 +681,14 @@ export default function BatchDetailScreen() {
         batchId={batch.id}
         onClose={() => setShowAddNote(false)}
       />
+      {activePhase && (
+        <EditTimerModal
+          visible={showEditTimer}
+          batchId={batch.id}
+          activePhase={activePhase}
+          onClose={() => setShowEditTimer(false)}
+        />
+      )}
     </View>
   );
 }
@@ -580,6 +721,11 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     paddingTop: 8,
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   completedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -593,6 +739,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'Inter_600SemiBold',
     color: Colors.sage,
+  },
+  debugBadge: {
+    backgroundColor: Colors.star,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  debugBadgeText: {
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+    color: Colors.white,
+    letterSpacing: 0.5,
   },
   scroll: {
     flex: 1,
@@ -647,14 +805,28 @@ const styles = StyleSheet.create({
   },
   progressContainer: {
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: 20,
     gap: 8,
   },
   phaseName: {
     fontSize: 14,
     fontFamily: 'Inter_500Medium',
     color: Colors.textSecondary,
+  },
+  editTimerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: Colors.accentLight,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     marginTop: 4,
+  },
+  editTimerBtnText: {
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+    color: Colors.accent,
   },
   noPhase: {
     alignItems: 'center',
@@ -772,6 +944,11 @@ const styles = StyleSheet.create({
   modalBoxLarge: {
     paddingBottom: 32,
   },
+  modalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   modalTitle: {
     fontSize: 20,
     fontFamily: 'Inter_700Bold',
@@ -782,6 +959,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     color: Colors.textSecondary,
     marginTop: -8,
+    lineHeight: 20,
+  },
+  modalDescMuted: {
+    color: Colors.textMuted,
+    fontSize: 13,
   },
   durationRow: {
     flexDirection: 'row',
@@ -807,6 +989,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     color: Colors.textSecondary,
     paddingRight: 4,
+  },
+  debugHint: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.star,
+    textAlign: 'center',
+    marginTop: 4,
   },
   ratingContainer: {
     alignItems: 'center',

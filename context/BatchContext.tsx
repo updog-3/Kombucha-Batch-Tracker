@@ -98,6 +98,7 @@ interface BatchContextValue {
   addPhase: (batchId: string, durationDays: number) => Promise<void>;
   completeBatch: (batchId: string, starRating: number | null) => void;
   addCustomTag: (tag: string) => void;
+  updatePhaseTimer: (batchId: string, entryId: string, newDurationDays: number) => Promise<void>;
   requestNotificationPermission: () => Promise<boolean>;
   getActivePhaseFn: (batch: Batch) => TimerLogEntry | null;
   getPhaseProgress: (entry: TimerLogEntry) => { elapsed: number; total: number; percent: number; dayStr: string };
@@ -306,6 +307,31 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     await saveBatches(newBatches, customTags);
   }, [batches, customTags, saveBatches]);
 
+  const updatePhaseTimer = useCallback(async (batchId: string, entryId: string, newDurationDays: number) => {
+    const batch = batches.find(b => b.id === batchId);
+    if (!batch) return;
+    const entry = batch.timeline.find(e => e.id === entryId && e.type === 'timer_log') as TimerLogEntry | undefined;
+    if (!entry) return;
+
+    // Cancel old notification
+    if (entry.notification_id) await cancelNotification(entry.notification_id);
+
+    const fireDate = entry.started_at + newDurationDays * 24 * 60 * 60 * 1000;
+    const notifId = await schedulePhaseNotification(batchId, batch.name, fireDate);
+
+    const newBatches = batches.map(b =>
+      b.id === batchId ? {
+        ...b,
+        timeline: b.timeline.map(e =>
+          e.id === entryId && e.type === 'timer_log'
+            ? { ...e, duration_days: newDurationDays, notification_id: notifId }
+            : e
+        ),
+      } : b
+    );
+    await saveBatches(newBatches, customTags);
+  }, [batches, customTags, saveBatches]);
+
   const completeBatch = useCallback((batchId: string, starRating: number | null) => {
     const now = Date.now();
     const newBatches = batches.map(b => {
@@ -341,7 +367,22 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     const elapsedDays = elapsedMs / (24 * 60 * 60 * 1000);
     const totalDays = entry.duration_days;
     const percent = Math.min(elapsedMs / totalMs, 1);
-    const dayStr = `Day ${Math.floor(elapsedDays) + 1} of ${totalDays}`;
+
+    let dayStr: string;
+    if (totalDays < 1) {
+      const elapsedHours = elapsedMs / 3600000;
+      const totalHours = totalMs / 3600000;
+      if (totalHours < 1) {
+        const elapsedMins = elapsedMs / 60000;
+        const totalMins = totalMs / 60000;
+        dayStr = `${Math.floor(elapsedMins)}m of ${Math.round(totalMins)}m`;
+      } else {
+        dayStr = `${elapsedHours.toFixed(1)}h of ${totalHours.toFixed(1)}h`;
+      }
+    } else {
+      dayStr = `Day ${Math.floor(elapsedDays) + 1} of ${totalDays}`;
+    }
+
     return { elapsed: elapsedDays, total: totalDays, percent, dayStr };
   }, []);
 
@@ -369,10 +410,11 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     addPhase,
     completeBatch,
     addCustomTag,
+    updatePhaseTimer,
     requestNotificationPermission,
     getActivePhaseFn,
     getPhaseProgress,
-  }), [batches, customTags, allTags, isLoading, createBatch, updateBatchName, updateBatchTags, deleteBatch, addNote, updateNote, addPhoto, updatePhotoDate, deleteEntry, updatePhaseName, addPhase, completeBatch, addCustomTag, requestNotificationPermission, getActivePhaseFn, getPhaseProgress]);
+  }), [batches, customTags, allTags, isLoading, createBatch, updateBatchName, updateBatchTags, deleteBatch, addNote, updateNote, addPhoto, updatePhotoDate, deleteEntry, updatePhaseName, addPhase, completeBatch, addCustomTag, updatePhaseTimer, requestNotificationPermission, getActivePhaseFn, getPhaseProgress]);
 
   return <BatchContext.Provider value={value}>{children}</BatchContext.Provider>;
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, Pressable, ScrollView,
+  View, Text, StyleSheet, TextInput, Pressable,
   Platform, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,8 +10,11 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '@/constants/colors';
 import { useBatches } from '@/context/BatchContext';
 import { TagChip } from '@/components/TagChip';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import { DEBUG_MODE } from '@/constants/debug';
 
 const DEFAULT_DURATION = 14;
+const STEP = DEBUG_MODE ? 0.1 : 1;
 
 export default function NewBatchScreen() {
   const insets = useSafeAreaInsets();
@@ -20,8 +23,8 @@ export default function NewBatchScreen() {
   const [name, setName] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [note, setNote] = useState('');
-  const [durationDays, setDurationDays] = useState(DEFAULT_DURATION);
-  const [durationInput, setDurationInput] = useState(String(DEFAULT_DURATION));
+  const [durationDays, setDurationDays] = useState(DEBUG_MODE ? 0.1 : DEFAULT_DURATION);
+  const [durationInput, setDurationInput] = useState(DEBUG_MODE ? '0.1' : String(DEFAULT_DURATION));
   const [customTagInput, setCustomTagInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [notifGranted, setNotifGranted] = useState(false);
@@ -39,19 +42,21 @@ export default function NewBatchScreen() {
   const handleAddCustomTag = () => {
     const trimmed = customTagInput.trim();
     if (!trimmed) return;
-    if (!allTags.includes(trimmed)) {
-      addCustomTag(trimmed);
-    }
-    if (!selectedTags.includes(trimmed)) {
-      setSelectedTags(prev => [...prev, trimmed]);
-    }
+    if (!allTags.includes(trimmed)) addCustomTag(trimmed);
+    if (!selectedTags.includes(trimmed)) setSelectedTags(prev => [...prev, trimmed]);
     setCustomTagInput('');
   };
 
   const handleDurationChange = (val: string) => {
     setDurationInput(val);
-    const n = parseInt(val, 10);
+    const n = parseFloat(val);
     if (!isNaN(n) && n > 0) setDurationDays(n);
+  };
+
+  const stepDuration = (dir: 1 | -1) => {
+    const newVal = Math.max(STEP, parseFloat((durationDays + dir * STEP).toFixed(2)));
+    setDurationDays(newVal);
+    setDurationInput(DEBUG_MODE ? String(newVal) : String(Math.round(newVal)));
   };
 
   const handleSubmit = async () => {
@@ -59,9 +64,9 @@ export default function NewBatchScreen() {
       Alert.alert('Name required', 'Please enter a name for your batch.');
       return;
     }
-    const days = parseInt(durationInput, 10);
-    if (isNaN(days) || days < 1) {
-      Alert.alert('Invalid duration', 'Please enter a valid number of days.');
+    const days = parseFloat(durationInput);
+    if (isNaN(days) || days <= 0) {
+      Alert.alert('Invalid duration', 'Please enter a valid duration.');
       return;
     }
     setSubmitting(true);
@@ -84,7 +89,14 @@ export default function NewBatchScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <Ionicons name="close" size={26} color={Colors.textSecondary} />
         </Pressable>
-        <Text style={styles.headerTitle}>New Batch</Text>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>New Batch</Text>
+          {DEBUG_MODE && (
+            <View style={styles.debugBadge}>
+              <Text style={styles.debugBadgeText}>DEBUG</Text>
+            </View>
+          )}
+        </View>
         <Pressable
           onPress={handleSubmit}
           disabled={submitting || !name.trim()}
@@ -94,11 +106,12 @@ export default function NewBatchScreen() {
         </Pressable>
       </View>
 
-      <ScrollView
+      <KeyboardAwareScrollViewCompat
         style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 24 }]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 40 }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        bottomOffset={60}
       >
         {/* Name */}
         <View style={styles.section}>
@@ -113,40 +126,34 @@ export default function NewBatchScreen() {
           />
         </View>
 
-        {/* Fermentation Duration */}
+        {/* Duration */}
         <View style={styles.section}>
           <Text style={styles.label}>Fermentation Duration</Text>
-          <Text style={styles.labelHint}>Phase I length — you can add more time later</Text>
+          <Text style={styles.labelHint}>
+            Phase I length — you can add more time later
+            {DEBUG_MODE ? '  (debug: decimal values enabled)' : ''}
+          </Text>
           <View style={styles.durationRow}>
-            <Pressable
-              onPress={() => {
-                const d = Math.max(1, durationDays - 1);
-                setDurationDays(d);
-                setDurationInput(String(d));
-              }}
-              style={styles.durationBtn}
-            >
+            <Pressable onPress={() => stepDuration(-1)} style={styles.durationBtn}>
               <Ionicons name="remove" size={22} color={Colors.accent} />
             </Pressable>
             <TextInput
               style={styles.durationInput}
               value={durationInput}
               onChangeText={handleDurationChange}
-              keyboardType="number-pad"
+              keyboardType={DEBUG_MODE ? 'decimal-pad' : 'number-pad'}
               textAlign="center"
             />
             <Text style={styles.durationUnit}>days</Text>
-            <Pressable
-              onPress={() => {
-                const d = durationDays + 1;
-                setDurationDays(d);
-                setDurationInput(String(d));
-              }}
-              style={styles.durationBtn}
-            >
+            <Pressable onPress={() => stepDuration(1)} style={styles.durationBtn}>
               <Ionicons name="add" size={22} color={Colors.accent} />
             </Pressable>
           </View>
+          {DEBUG_MODE && (
+            <Text style={styles.debugHint}>
+              {(durationDays * 24).toFixed(2)} hours · {(durationDays * 24 * 60).toFixed(0)} minutes
+            </Text>
+          )}
         </View>
 
         {/* Tags */}
@@ -182,7 +189,7 @@ export default function NewBatchScreen() {
           </View>
         </View>
 
-        {/* Initial Note */}
+        {/* Opening Note */}
         <View style={styles.section}>
           <Text style={styles.label}>Opening Note</Text>
           <Text style={styles.labelHint}>Optional — describe your recipe, ingredients, etc.</Text>
@@ -205,7 +212,7 @@ export default function NewBatchScreen() {
             </Text>
           </View>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollViewCompat>
     </View>
   );
 }
@@ -224,10 +231,27 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
+  headerCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   headerTitle: {
     fontSize: 17,
     fontFamily: 'Inter_600SemiBold',
     color: Colors.textPrimary,
+  },
+  debugBadge: {
+    backgroundColor: Colors.star,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  debugBadgeText: {
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+    color: Colors.white,
+    letterSpacing: 0.5,
   },
   createBtn: {
     backgroundColor: Colors.accent,
@@ -248,11 +272,10 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
-    gap: 8,
   },
   section: {
     gap: 8,
-    marginBottom: 20,
+    marginBottom: 24,
   },
   label: {
     fontSize: 14,
@@ -265,7 +288,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
     color: Colors.textSecondary,
-    marginTop: -4,
   },
   input: {
     backgroundColor: Colors.surface,
@@ -278,7 +300,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   noteInput: {
-    minHeight: 100,
+    minHeight: 120,
   },
   durationRow: {
     flexDirection: 'row',
@@ -306,6 +328,12 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     color: Colors.textSecondary,
     paddingRight: 4,
+  },
+  debugHint: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.star,
+    textAlign: 'center',
   },
   tagsContainer: {
     flexDirection: 'row',
@@ -350,7 +378,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceAlt,
     borderRadius: 10,
     padding: 12,
-    marginTop: 4,
   },
   notifWarningText: {
     flex: 1,

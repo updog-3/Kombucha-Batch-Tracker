@@ -4,4 +4,4 @@
  * - Stepper uses 0.1 increments instead of 1
  * - Keyboard shows decimal pad
  */
-export const DEBUG_MODE = true;
+export const DEBUG_MODE = false;

@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, TextInput,
-  Platform, Alert, Modal,
+  Platform, Alert, Modal, KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -398,31 +398,33 @@ function AddNoteModal({ visible, batchId, onClose }: AddNoteModalProps) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={styles.modalBox} onPress={e => e.stopPropagation()}>
-          <Text style={styles.modalTitle}>Add Note</Text>
-          <TextInput
-            style={[styles.input, styles.noteInput]}
-            value={content}
-            onChangeText={setContent}
-            placeholder="Write your observation..."
-            placeholderTextColor={Colors.textMuted}
-            multiline
-            autoFocus
-            textAlignVertical="top"
-          />
-          <View style={styles.modalActions}>
-            <Pressable onPress={() => { setContent(''); onClose(); }} style={styles.modalCancelBtn}>
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              onPress={handleSave}
-              disabled={!content.trim()}
-              style={[styles.modalConfirmBtn, !content.trim() && { backgroundColor: Colors.border }]}
-            >
-              <Text style={styles.modalConfirmText}>Add Note</Text>
-            </Pressable>
-          </View>
-        </Pressable>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <Pressable style={styles.modalBox} onPress={e => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>Add Note</Text>
+            <TextInput
+              style={[styles.input, styles.noteInput]}
+              value={content}
+              onChangeText={setContent}
+              placeholder="Write your observation..."
+              placeholderTextColor={Colors.textMuted}
+              multiline
+              autoFocus
+              textAlignVertical="top"
+            />
+            <View style={styles.modalActions}>
+              <Pressable onPress={() => { setContent(''); onClose(); }} style={styles.modalCancelBtn}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleSave}
+                disabled={!content.trim()}
+                style={[styles.modalConfirmBtn, !content.trim() && { backgroundColor: Colors.border }]}
+              >
+                <Text style={styles.modalConfirmText}>Add Note</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </KeyboardAvoidingView>
       </Pressable>
     </Modal>
   );
@@ -465,7 +467,7 @@ export default function BatchDetailScreen() {
     }
 
     Alert.alert('Add Photo', 'Choose source', [
-      {
+      ...(Platform.OS !== 'web' ? [{
         text: 'Camera',
         onPress: async () => {
           const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -484,7 +486,7 @@ export default function BatchDetailScreen() {
             if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           }
         },
-      },
+      }] : []),
       {
         text: 'Photo Library',
         onPress: async () => {

@@ -12,6 +12,10 @@ import * as Notifications from "expo-notifications";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+
+const MaybeKeyboardProvider = Platform.OS === 'web'
+  ? ({ children }: { children: React.ReactNode }) => <>{children}</>
+  : KeyboardProvider;
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { BatchProvider } from "@/context/BatchContext";
@@ -80,11 +84,11 @@ export default function RootLayout() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <GestureHandlerRootView style={{ flex: 1 }}>
-          <KeyboardProvider>
+          <MaybeKeyboardProvider>
             <BatchProvider>
               <RootLayoutNav />
             </BatchProvider>
-          </KeyboardProvider>
+          </MaybeKeyboardProvider>
         </GestureHandlerRootView>
       </QueryClientProvider>
     </ErrorBoundary>

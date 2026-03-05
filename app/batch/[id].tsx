@@ -143,15 +143,17 @@ interface EditTimerModalProps {
 }
 
 function EditTimerModal({ visible, batchId, activePhase, onClose }: EditTimerModalProps) {
-  const { updatePhaseTimer } = useBatches();
+  const { updatePhaseTimer, endActivePhase } = useBatches();
   const [days, setDays] = useState(activePhase.duration_days);
   const [daysInput, setDaysInput] = useState(String(activePhase.duration_days));
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingEnd, setConfirmingEnd] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setDays(activePhase.duration_days);
       setDaysInput(String(activePhase.duration_days));
+      setConfirmingEnd(false);
     }
   }, [visible, activePhase.duration_days]);
 
@@ -165,6 +167,12 @@ function EditTimerModal({ visible, batchId, activePhase, onClose }: EditTimerMod
     onClose();
   };
 
+  const handleConfirmEnd = async () => {
+    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    await endActivePhase(batchId, activePhase.id);
+    onClose();
+  };
+
   const elapsedDays = (Date.now() - activePhase.started_at) / (24 * 60 * 60 * 1000);
   const minDays = parseFloat(Math.max(STEP, elapsedDays + STEP).toFixed(2));
 
@@ -172,40 +180,78 @@ function EditTimerModal({ visible, batchId, activePhase, onClose }: EditTimerMod
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.modalOverlay} onPress={onClose}>
         <Pressable style={styles.modalBox} onPress={e => e.stopPropagation()}>
-          <View style={styles.modalTitleRow}>
-            <Text style={styles.modalTitle}>Edit Timer</Text>
-            {DEBUG_MODE && (
-              <View style={styles.debugBadge}>
-                <Text style={styles.debugBadgeText}>DEBUG</Text>
+          {confirmingEnd ? (
+            <>
+              <View style={styles.endConfirmHeader}>
+                <Ionicons name="stop-circle" size={32} color={Colors.danger} />
+                <Text style={styles.modalTitle}>End Phase Now?</Text>
               </View>
-            )}
-          </View>
-          <Text style={styles.modalDesc}>
-            Change the total duration of {activePhase.phase_name}.
-            {'\n'}
-            <Text style={styles.modalDescMuted}>
-              Started {new Date(activePhase.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.
-              {' '}Must be longer than elapsed time.
-            </Text>
-          </Text>
-          <DurationPicker
-            value={days}
-            inputValue={daysInput}
-            onValueChange={v => setDays(Math.max(minDays, v))}
-            onInputChange={s => {
-              setDaysInput(s);
-              const n = parseFloat(s);
-              if (!isNaN(n) && n > 0) setDays(Math.max(minDays, n));
-            }}
-          />
-          <View style={styles.modalActions}>
-            <Pressable onPress={onClose} style={styles.modalCancelBtn}>
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </Pressable>
-            <Pressable onPress={handleSave} disabled={submitting} style={styles.modalConfirmBtn}>
-              <Text style={styles.modalConfirmText}>Save</Text>
-            </Pressable>
-          </View>
+              <Text style={styles.modalDesc}>
+                This will end {activePhase.phase_name} immediately.
+                {'\n'}
+                <Text style={styles.modalDescMuted}>
+                  You'll be able to add more time or complete the batch after.
+                </Text>
+              </Text>
+              <View style={styles.modalActions}>
+                <Pressable onPress={() => setConfirmingEnd(false)} style={styles.modalCancelBtn}>
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleConfirmEnd}
+                  testID="confirm-end-phase"
+                  style={[styles.modalConfirmBtn, { backgroundColor: Colors.danger }]}
+                >
+                  <Text style={styles.modalConfirmText}>End Phase</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.modalTitleRow}>
+                <Text style={styles.modalTitle}>Edit Timer</Text>
+                {DEBUG_MODE && (
+                  <View style={styles.debugBadge}>
+                    <Text style={styles.debugBadgeText}>DEBUG</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.modalDesc}>
+                Change the total duration of {activePhase.phase_name}.
+                {'\n'}
+                <Text style={styles.modalDescMuted}>
+                  Started {new Date(activePhase.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.
+                  {' '}Must be longer than elapsed time.
+                </Text>
+              </Text>
+              <DurationPicker
+                value={days}
+                inputValue={daysInput}
+                onValueChange={v => setDays(Math.max(minDays, v))}
+                onInputChange={s => {
+                  setDaysInput(s);
+                  const n = parseFloat(s);
+                  if (!isNaN(n) && n > 0) setDays(Math.max(minDays, n));
+                }}
+              />
+              <View style={styles.modalActions}>
+                <Pressable onPress={onClose} style={styles.modalCancelBtn}>
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable onPress={handleSave} disabled={submitting} style={styles.modalConfirmBtn}>
+                  <Text style={styles.modalConfirmText}>Save</Text>
+                </Pressable>
+              </View>
+              <Pressable
+                onPress={() => setConfirmingEnd(true)}
+                testID="end-phase-btn"
+                style={styles.endPhaseBtn}
+              >
+                <Ionicons name="stop-circle-outline" size={16} color={Colors.danger} />
+                <Text style={styles.endPhaseBtnText}>End Phase Now</Text>
+              </Pressable>
+            </>
+          )}
         </Pressable>
       </Pressable>
     </Modal>
@@ -1081,5 +1127,27 @@ const styles = StyleSheet.create({
   noteInput: {
     minHeight: 100,
     textAlignVertical: 'top',
+  },
+  endConfirmHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  endPhaseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.danger + '66',
+    backgroundColor: Colors.danger + '10',
+    marginTop: -4,
+  },
+  endPhaseBtnText: {
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+    color: Colors.danger,
   },
 });

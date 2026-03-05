@@ -99,6 +99,7 @@ interface BatchContextValue {
   completeBatch: (batchId: string, starRating: number | null) => void;
   addCustomTag: (tag: string) => void;
   updatePhaseTimer: (batchId: string, entryId: string, newDurationDays: number) => Promise<void>;
+  endActivePhase: (batchId: string, entryId: string) => Promise<void>;
   requestNotificationPermission: () => Promise<boolean>;
   getActivePhaseFn: (batch: Batch) => TimerLogEntry | null;
   getPhaseProgress: (entry: TimerLogEntry) => { elapsed: number; total: number; percent: number; dayStr: string };
@@ -332,6 +333,31 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     await saveBatches(newBatches, customTags);
   }, [batches, customTags, saveBatches]);
 
+  const endActivePhase = useCallback(async (batchId: string, entryId: string) => {
+    const batch = batches.find(b => b.id === batchId);
+    if (!batch) return;
+    const entry = batch.timeline.find(e => e.id === entryId && e.type === 'timer_log') as TimerLogEntry | undefined;
+    if (!entry) return;
+
+    if (entry.notification_id) await cancelNotification(entry.notification_id);
+
+    // Set duration to elapsed time so isPhaseTimedOut returns true immediately
+    const elapsedMs = Date.now() - entry.started_at;
+    const elapsedDays = Math.max(0.0001, elapsedMs / (24 * 60 * 60 * 1000));
+
+    const newBatches = batches.map(b =>
+      b.id === batchId ? {
+        ...b,
+        timeline: b.timeline.map(e =>
+          e.id === entryId && e.type === 'timer_log'
+            ? { ...e, duration_days: elapsedDays, notification_id: null }
+            : e
+        ),
+      } : b
+    );
+    await saveBatches(newBatches, customTags);
+  }, [batches, customTags, saveBatches]);
+
   const completeBatch = useCallback((batchId: string, starRating: number | null) => {
     const now = Date.now();
     const newBatches = batches.map(b => {
@@ -411,10 +437,11 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     completeBatch,
     addCustomTag,
     updatePhaseTimer,
+    endActivePhase,
     requestNotificationPermission,
     getActivePhaseFn,
     getPhaseProgress,
-  }), [batches, customTags, allTags, isLoading, createBatch, updateBatchName, updateBatchTags, deleteBatch, addNote, updateNote, addPhoto, updatePhotoDate, deleteEntry, updatePhaseName, addPhase, completeBatch, addCustomTag, updatePhaseTimer, requestNotificationPermission, getActivePhaseFn, getPhaseProgress]);
+  }), [batches, customTags, allTags, isLoading, createBatch, updateBatchName, updateBatchTags, deleteBatch, addNote, updateNote, addPhoto, updatePhotoDate, deleteEntry, updatePhaseName, addPhase, completeBatch, addCustomTag, updatePhaseTimer, endActivePhase, requestNotificationPermission, getActivePhaseFn, getPhaseProgress]);
 
   return <BatchContext.Provider value={value}>{children}</BatchContext.Provider>;
 }

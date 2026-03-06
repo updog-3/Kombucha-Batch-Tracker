@@ -32,6 +32,7 @@
     },
     "web": {
       "favicon": "./assets/images/favicon.png",
+      "icon": "./assets/images/icon.png",
       "output": "static",
       "bundler": "metro",
       "name": "Kombucha Tracker",

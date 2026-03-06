@@ -10,17 +10,18 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Notifications from "expo-notifications";
 import React, { useEffect } from "react";
+import { View, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
-
-const MaybeKeyboardProvider = Platform.OS === 'web'
-  ? ({ children }: { children: React.ReactNode }) => <>{children}</>
-  : KeyboardProvider;
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { BatchProvider } from "@/context/BatchContext";
-import { Platform } from "react-native";
 import { router } from "expo-router";
+
+const RootView = Platform.OS === 'web' ? View : GestureHandlerRootView;
+const MaybeKeyboardProvider = Platform.OS === 'web'
+  ? ({ children }: { children: React.ReactNode }) => <>{children}</>
+  : KeyboardProvider;
 
 SplashScreen.preventAutoHideAsync();
 
@@ -83,13 +84,13 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <GestureHandlerRootView style={{ flex: 1 }}>
+        <RootView style={{ flex: 1 }}>
           <MaybeKeyboardProvider>
             <BatchProvider>
               <RootLayoutNav />
             </BatchProvider>
           </MaybeKeyboardProvider>
-        </GestureHandlerRootView>
+        </RootView>
       </QueryClientProvider>
     </ErrorBoundary>
   );
